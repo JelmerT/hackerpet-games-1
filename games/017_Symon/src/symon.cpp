@@ -71,20 +71,20 @@ const int TARGET_RESPONSE_INTENSITY_BLUE = 80; // [0-99]
 const int TARGET_RESPONSE_MISS_INTENSITY_RED = 99; // [0-99]
 const int TARGET_RESPONSE_MISS_INTENSITY_GREEN = 99; // [0-99]
 const int TARGET_RESPONSE_MISS_INTENSITY_BLUE = 0; // [0-99]
-const int HINT_INTENSITY_MULTIPL_1[] = {100,30,5,0,0,0,0,0,0,0}; // for level 10-19
-const int HINT_INTENSITY_MULTIPL_2[] = {100,30,25,20,15,10,7,5,2,0}; // for level 20 on
+const int HINT_INTENSITY_MULTIPL_1[] = {30,0,0,0,0,0,0,0,0,0}; // for level 10-19
+const int HINT_INTENSITY_MULTIPL_2[] = {0,0,0,0,0,0,0,0,0,0}; // for level 20 on
 // Volume
 const int AUDIO_VOLUME = 60; //[0-99]
 // Delays and wait times
-const unsigned long FOODTREAT_DURATION = 4000; // (ms) how long to present foodtreat
+const unsigned long FOODTREAT_DURATION = 2000; // (ms) how long to present foodtreat
 const unsigned long TIMEOUT_INTERACTIONS_MS = 10000; // (ms) how long to wait until restarting the
                                                     // interaction
 const unsigned long INTER_GAME_DELAY = 5000; // timeout inbetween games on miss
 const int RESPONSE_PHASE_WAIT_TIME[] = {250,250,250,250,500,1000,1500,2000,2500,3000}; // for all levels
 // Chance calculations
-const int END_ON_MISS_CHANCE_1[] = {100,0,25,50,100,100,100,100,100,100}; // for level 10 - 19
-const int END_ON_MISS_CHANCE_2[] = {0,75,80,85,90,95,100,100,100,100}; // for level 20 on and seq_pos == seq_lenght-2
-const int END_ON_MISS_CHANCE_3[] = {0,45,50,55,60,65,70,75,85,100}; // for level 20 on and  seq_pos == seq_length-1
+const int END_ON_MISS_CHANCE_1[] = {25,50,50,75,100,100,100,100,100,100}; // for level 10 - 19
+const int END_ON_MISS_CHANCE_2[] = {10,75,80,85,90,95,100,100,100,100}; // for level 20 on and seq_pos == seq_lenght-2
+const int END_ON_MISS_CHANCE_3[] = {10,45,50,55,60,65,70,75,85,100}; // for level 20 on and  seq_pos == seq_length-1
 /**
  * Global variables and constants
  * ------------------------------
@@ -278,7 +278,7 @@ bool playSymon(){
     touchLogTimes[i]=0;
   }
   accurate = false;
-  timeout = false;
+  // timeout = false;
   hintIntensityMultipl = 0;
   foodtreatPresented = false; // store if foodtreat was presented in last interaction
   foodtreatWasEaten = false; // store if foodtreat was eaten in last interaction
@@ -303,7 +303,7 @@ bool playSymon(){
   hub.SetDIResetLock(true);
 
   gameStartTime = Time.now();
-
+int currentLevel = 29; // LEVELS START AT 10
   //calculate sequenceLength
   sequenceLength = (currentLevel/10); // see game-logic chart
 
@@ -313,11 +313,25 @@ bool playSymon(){
     for (int i = 0; i < sequenceLength; ++i)
     {
         random_shuffle(&touchpads[0], &touchpads[3]);
-        touchpad_sequence[i] = touchpads[0];
+        // make sure we don't have consecutive touches
+        if (i == 0)
+          touchpad_sequence[i] = touchpads[0];
+        else if (touchpads[0] != touchpad_sequence[i-1])
+          touchpad_sequence[i] = touchpads[0];
+        else
+          touchpad_sequence[i] = touchpads[1];
     }
   } else {
     Log.info("Doing a retry game");
   }
+
+
+  if (currentLevel > 19){
+    // fixing sequence:
+    touchpad_sequence[0] = hub.BUTTON_LEFT;
+    touchpad_sequence[1] = hub.BUTTON_RIGHT;
+  }
+
 
   Log.info("Current level: %u, sequence length: %u, successes: %u, misses: %u",
   currentLevel, sequenceLength, countSuccesses(), countMisses());
@@ -336,32 +350,37 @@ bool playSymon(){
   // turn off the cue light
   hub.SetLights(hub.LIGHT_CUE,0,0,0);
 
-  // turn on the touchpad lights at start intensity
-  hub.SetLightsRGB(
-    hub.LIGHT_BTNS,
-    START_INTENSITY_RED,
-    START_INTENSITY_GREEN,
-    START_INTENSITY_BLUE,
-    SLEW);
+  if (timeout)
+  {
+    // turn on the touchpad lights at start intensity
+    hub.SetLightsRGB(
+      hub.LIGHT_BTNS,
+      START_INTENSITY_RED,
+      START_INTENSITY_GREEN,
+      START_INTENSITY_BLUE,
+      SLEW);
 
-  // wait until: a button is currently pressed
-  yield_wait_for(hub.AnyButtonPressed(), false);
-  if(hub.AnyButtonPressed()){
-    touchLog[touchLogIndex] = hub.AnyButtonPressed();
-    touchLogTimes[touchLogIndex] = 0;
-    touchLogIndex++;
-    // Record start timestamp for performance logging
+    // wait until: a button is currently pressed
+    yield_wait_for(hub.AnyButtonPressed(), false);
+    if(hub.AnyButtonPressed()){
+      touchLog[touchLogIndex] = hub.AnyButtonPressed();
+      touchLogTimes[touchLogIndex] = 0;
+      touchLogIndex++;
+      // Record start timestamp for performance logging
+      timestampBefore = millis();
+    }
+
+    // turn off all touchpad lights
+    hub.SetLights(hub.LIGHT_BTNS, 0, 0, 0);
+
+    // slight delay to prevent double presses to show up as a miss
+    yield_sleep_ms(100, false);
+
+    // wait until: no button is currently pressed
+    yield_wait_for((!hub.AnyButtonPressed()), false);
+  } else {
     timestampBefore = millis();
   }
-
-  // turn off all touchpad lights
-  hub.SetLights(hub.LIGHT_BTNS, 0, 0, 0);
-
-  // slight delay to prevent double presses to show up as a miss
-  yield_sleep_ms(100, false);
-
-  // wait until: no button is currently pressed
-  yield_wait_for((!hub.AnyButtonPressed()), false);
 
 
 //------------------------------------------------------------------------------
@@ -493,7 +512,6 @@ bool playSymon(){
       }
       while (!(pressed[sequence_pos] != 0) //0 if any touchpad is touched
               //0 if timed out
-          // no timeouts for now
               && millis()  < timestampTouchpad + TIMEOUT_INTERACTIONS_MS);
 
       if (pressed[sequence_pos] != 0)
@@ -519,7 +537,10 @@ bool playSymon(){
           hub.SetLights(hub.LIGHT_BTNS, 0, 0, 0); // turn off all touchpad lights
           // play touchpad sound
           hub.PlayAudio(buttonToAudio(pressed[sequence_pos]), AUDIO_VOLUME);
-          yield_sleep_ms(SOUND_TOUCHPAD_DELAY-50, false);
+          // play correct sound
+          hub.PlayAudio(hub.AUDIO_POSITIVE, AUDIO_VOLUME);
+          // give the Hub a moment to finish playing the reward sound
+          yield_sleep_ms(SOUND_AUDIO_POSITIVE_DELAY, false);
           accurate = true;
           Log.info("Correct");
         } else {
@@ -604,9 +625,6 @@ bool playSymon(){
 
   if (accurate) {
     Log.info("Sequence correct");
-    hub.PlayAudio(hub.AUDIO_POSITIVE, AUDIO_VOLUME);
-    // give the Hub a moment to finish playing the reward sound
-    yield_sleep_ms(SOUND_AUDIO_POSITIVE_DELAY, false);
 
     foodtreatPresented = (((int)(rand() % 100)) <= REINFORCE_RATIO);
     if(foodtreatPresented){
